@@ -87,8 +87,8 @@ public final class AttestationHooks {
 
         if (packageName.equals(PACKAGE_GPHOTOS)) {
             if (!SystemProperties.getBoolean("persist.sys.pixelprops.gphotos", true)) {
-                dlog("Spoofing Pixel 8 Pro for: " + packageName);
-                sPixel8ProProps.forEach(AttestationHooks::setPropValue);
+                dlog("Photos spoofing disabled by system prop");
+                return;
             } else {
                 dlog("Spoofing Pixel XL for: " + packageName);
                 sPixelXLProps.forEach(AttestationHooks::setPropValue);
