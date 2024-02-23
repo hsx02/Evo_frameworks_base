@@ -53,6 +53,10 @@ import java.util.regex.Matcher;
 
 public class PixelPropsUtils {
 
+    private static final String TAG = PixelPropsUtils.class.getSimpleName();
+    private static final String DEVICE = "org.evolution.device";
+    private static final boolean DEBUG = SystemProperties.getBoolean("persist.sys.pixelprops.debug", false);
+
     private static final String PACKAGE_AIAI = "com.google.android.apps.miphone.aiai.AiaiApplication";
     private static final String PACKAGE_ARCORE = "com.google.ar.core";
     private static final String PACKAGE_FINSKY = "com.android.vending";
@@ -67,11 +71,8 @@ public class PixelPropsUtils {
 
     private static final String SPOOF_MUSIC_APPS = "persist.sys.disguise_props_for_music_app";
     private static final String SPOOF_PIF = "persist.sys.pif";
+    private static final String SPOOF_PIXEL_DEVICE = "persist.sys.pixeldevice";
     private static final String SPOOF_PIXEL_PROPS = "persist.sys.pixelprops";
-
-    private static final String TAG = PixelPropsUtils.class.getSimpleName();
-    private static final String DEVICE = "org.evolution.device";
-    private static final boolean DEBUG = false;
 
     private static final Boolean sEnablePixelProps =
             Resources.getSystem().getBoolean(R.bool.config_enablePixelProps);
@@ -79,6 +80,7 @@ public class PixelPropsUtils {
     private static final Map<String, Object> propsToChangeGeneric;
     private static final Map<String, Object> propsToChangeRecentPixel;
     private static final Map<String, Object> propsToChangePixelTablet;
+    private static final Map<String, Object> propsToChangePixel5a;
     private static final Map<String, Object> propsToChangeMeizu;
     private static final Map<String, ArrayList<String>> propsToKeep;
 
@@ -139,7 +141,7 @@ public class PixelPropsUtils {
     private static final ComponentName GMS_ADD_ACCOUNT_ACTIVITY = ComponentName.unflattenFromString(
             "com.google.android.gms/.auth.uiflows.minutemaid.MinuteMaidActivity");
 
-    private static volatile boolean sIsGms, sIsFinsky, sIsSetupWizard;
+    private static volatile boolean sIsGms, sIsFinsky, sIsExcluded, sIsSetupWizard;
     private static volatile String sProcessName;
 
     static {
@@ -166,6 +168,15 @@ public class PixelPropsUtils {
         propsToChangePixelTablet.put("MODEL", "Pixel Tablet");
         propsToChangePixelTablet.put("ID", "UQ1A.240205.002");
         propsToChangePixelTablet.put("FINGERPRINT", "google/tangorpro/tangorpro:14/UQ1A.240205.002/11224170:user/release-keys");
+        propsToChangePixel5a = new HashMap<>();
+        propsToChangePixel5a.put("BRAND", "google");
+        propsToChangePixel5a.put("MANUFACTURER", "Google");
+        propsToChangePixel5a.put("DEVICE", "barbet");
+        propsToChangePixel5a.put("PRODUCT", "barbet");
+        propsToChangePixel5a.put("HARDWARE", "barbet");
+        propsToChangePixel5a.put("MODEL", "Pixel 5a");
+        propsToChangePixel5a.put("ID", "UQ1A.240205.002");
+        propsToChangePixel5a.put("FINGERPRINT", "google/barbet/barbet:14/UQ1A.240205.002/11224170:user/release-keys");
         propsToChangeMeizu = new HashMap<>();
         propsToChangeMeizu.put("BRAND", "meizu");
         propsToChangeMeizu.put("MANUFACTURER", "Meizu");
@@ -304,13 +315,13 @@ public class PixelPropsUtils {
         sProcessName = processName;
         sIsGms = packageName.equals(PACKAGE_GMS) && processName.equals(PROCESS_GMS_UNSTABLE);
         sIsFinsky = packageName.equals(PACKAGE_FINSKY);
+        sIsExcluded = Arrays.asList(packagesToKeep).contains(packageName);
         sIsSetupWizard = packageName.equals(PACKAGE_SETUP_WIZARD);
         propsToChangeGeneric.forEach((k, v) -> setPropValue(k, v));
         if (packageName == null || processName == null || packageName.isEmpty()) {
             return;
         }
         if (packageName.equals(PACKAGE_GMS)) {
-            setPropValue("TIME", System.currentTimeMillis());
             if (sIsGms) {
                 if (shouldTryToSpoofDevice()) {
                     if (!SystemProperties.getBoolean(SPOOF_PIF, true)) {
@@ -323,28 +334,35 @@ public class PixelPropsUtils {
                     Process.killProcess(Process.myPid());
                 }
             }
+            setPropValue("TIME", System.currentTimeMillis());
         }
         if ((packageName.startsWith(PACKAGE_GOOGLE) && !sIsGms && !isGoogleCameraPackage(packageName)
-                && !Arrays.asList(packagesToKeep).contains(packageName))
+                && !sIsExcluded)
                 || packageName.startsWith(PACKAGE_SAMSUNG)
                 || Arrays.asList(packagesToChangeRecentPixel).contains(packageName)) {
 
             boolean isPixelDevice = Arrays.asList(pixelCodenames).contains(SystemProperties.get(DEVICE));
-            if (isPixelDevice || !sEnablePixelProps || !SystemProperties.getBoolean(SPOOF_PIXEL_PROPS, true)) {
-                dlog("Pixel props is disabled by config or system prop or device is still a supported Pixel");
+            if (!sEnablePixelProps || !SystemProperties.getBoolean(SPOOF_PIXEL_PROPS, true)) {
+                if (isPixelDevice && !SystemProperties.getBoolean(SPOOF_PIXEL_DEVICE, false)) {
+                    dlog("Pixel props is disabled by system prop and device is still a supported Pixel");
+                    return;
+                }
+                dlog("Pixel props is disabled by config or system prop");
                 return;
             }
             if (sIsTablet && !isPixelDevice) {
                 propsToChange.putAll(propsToChangePixelTablet);
             }
-            if (processName.toLowerCase().contains("ui")
-                    && processName.toLowerCase().contains("gservice")
-                    && processName.toLowerCase().contains("gapps")
-                    && processName.toLowerCase().contains("learning")
-                    && processName.toLowerCase().contains("search")
-                    && processName.toLowerCase().contains("persistent")) {
-                return;
+            if (packageName.equals(PACKAGE_GMS)
+                    && (processName.toLowerCase().contains("ui")
+                    || processName.toLowerCase().contains("gservice")
+                    || processName.toLowerCase().contains("gapps")
+                    || processName.toLowerCase().contains("learning")
+                    || processName.toLowerCase().contains("search")
+                    || processName.toLowerCase().contains("persistent"))) {
+                propsToChange.putAll(propsToChangePixel5a);
             }
+            dlog("Spoofing build for Google Services");
             propsToChange.putAll(propsToChangeRecentPixel);
         } else if (SystemProperties.getBoolean(SPOOF_MUSIC_APPS, false)
                 && Arrays.asList(packagesToChangeMeizu).contains(packageName)) {
